@@ -29,6 +29,7 @@
 
 #include "StatementFor.h"
 #include <cassert>
+#include <cstdlib>
 
 #include "Common.h"
 #include "Block.h"
@@ -79,28 +80,52 @@ make_random_loop_control(int &init, int &limit, int &incr,
 	test_op = t_ops[pure_rnd_upto(sizeof(t_ops)/sizeof(*t_ops))];
 	ERROR_RETURN();
 
+	bool incr_op_pos = pure_rnd_flipcoin(50);
+	if (limit != init) {
+		incr_op_pos = (limit > init);
+	} else {
+		// Prevent Overflow.
+		if ((test_op == eCmpGe) && (incr_op_pos)){
+			incr_op_pos = false;
+		}
+		// Prevent Underflow.
+		if ((test_op == eCmpLe) && (!incr_op_pos)){
+			incr_op_pos = true;
+		}
+	}
+
 	if (pure_rnd_flipcoin(50)) {
 		ERROR_RETURN();
 		// Do `+=' or `-=' by an increment between 0 and 9 inclusive.
 		// make sure the limit can be reached without wrap-around
-		incr_op = (limit >= init) ? eAddAssign : eSubAssign;
+		incr_op = incr_op_pos ? eAddAssign : eSubAssign;
 		incr = pure_rnd_upto(10);
 		if (incr == 0) incr = 1;
+		// Make sure loop will exit at some point when test_op `!='.
+		if (test_op == eCmpNe) {
+			while ((std::abs(limit - init) % incr) != 0) {
+				incr--;
+			}
+		}
 	} else {
 		ERROR_RETURN();
 		// Do `++' or `--', pre- or post-.
 		// make sure the limit can be reached without wrap-around
-		if ((limit < init) || ((limit == init) && (test_op == eCmpGe))) {
-			incr_op = pure_rnd_flipcoin(50) ? ePreDecr : ePostDecr;
-		} else {
+		if (incr_op_pos) {
 			incr_op = pure_rnd_flipcoin(50) ? ePreIncr : ePostIncr;
 		}
+		else {
+			incr_op = pure_rnd_flipcoin(50) ? ePreDecr : ePostDecr;
+		}
 		if (((incr_op == ePreIncr) && !CGOptions::pre_incr_operator())
-			|| ((incr_op == ePostIncr) && !CGOptions::post_incr_operator())
-			|| ((incr_op == ePreDecr) && !CGOptions::pre_decr_operator())
-			|| ((incr_op == ePostDecr) && !CGOptions::post_decr_operator())) {
+			|| ((incr_op == ePostIncr) && !CGOptions::post_incr_operator())){
 
-			incr_op = (limit >= init) ? eAddAssign : eSubAssign;
+			incr_op = eAddAssign;
+		}
+		if	(((incr_op == ePreDecr) && !CGOptions::pre_decr_operator())
+			 || ((incr_op == ePostDecr) && !CGOptions::post_decr_operator())) {
+
+			incr_op = eSubAssign;
 		}
 		incr = 1;
 	}
